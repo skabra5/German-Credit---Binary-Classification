@@ -1,0 +1,1027 @@
+---
+title: "German Credit Classification Problem"
+author: "Sakshi Kabra"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+
+library(MASS)
+library(dplyr)
+library(tibble)
+library(knitr)
+library(readxl)
+library(ROCR)
+library(tidyr)
+library(ggplot2)
+library(statsr)
+
+library(randomForest)
+library(caret)
+library(e1071)
+library(pROC)
+
+library(party)
+library(rpart)
+
+
+
+```
+
+
+
+
+**German Credit Classification Problem** 
+ 
+*We import the wine dataset from the xls file 'German Credit.xls' and name our dataframe "credit".*
+
+```{r}
+
+library(readxl)
+credit <- read_xls("German Credit.xls")
+credit <-  na.omit(credit)
+
+```
+
+
+**Problem 5, Part a:**
+
+*According to the dataset description, a lot of variables are infact categorical but are present as numerical variables as seen from the data summary. So we convert these variables into factor variable.*
+
+```{r}
+
+summary(credit)
+
+credit <- credit[,-1]
+
+credit$CHK_ACCT <- factor(credit$CHK_ACCT)
+credit$HISTORY <- factor(credit$HISTORY)
+credit$NEW_CAR <- factor(credit$NEW_CAR)
+credit$USED_CAR <- factor(credit$USED_CAR)
+credit$FURNITURE <- factor(credit$FURNITURE)
+
+credit$`RADIO/TV` <- factor(credit$`RADIO/TV`)
+names(credit)[7]<-"Radio_TV"
+
+credit$EDUCATION <- factor(credit$EDUCATION)
+credit$RETRAINING <- factor(credit$RETRAINING)
+credit$SAV_ACCT <- factor(credit$SAV_ACCT)
+credit$EMPLOYMENT <- factor(credit$EMPLOYMENT)
+credit$MALE_DIV <- factor(credit$MALE_DIV)
+credit$MALE_SINGLE <- factor(credit$MALE_SINGLE)
+credit$MALE_MAR_or_WID <- factor(credit$MALE_MAR_or_WID)
+credit$`CO-APPLICANT` <- factor(credit$`CO-APPLICANT`)
+names(credit)[17]<-"Coapplicant"
+credit$GUARANTOR <- factor(credit$GUARANTOR)
+credit$REAL_ESTATE <- factor(credit$REAL_ESTATE)
+credit$PROP_UNKN_NONE <- factor(credit$PROP_UNKN_NONE)
+credit$OTHER_INSTALL <- factor(credit$OTHER_INSTALL)
+credit$RENT <- factor(credit$RENT)
+credit$OWN_RES <- factor(credit$OWN_RES)
+credit$JOB <- factor(credit$JOB)
+credit$TELEPHONE <- factor(credit$TELEPHONE)
+credit$FOREIGN <- factor(credit$FOREIGN)
+
+
+credit <- credit %>% 
+ mutate(RESPONSE = plyr::mapvalues(RESPONSE, c(1,0), c("Good", "Bad")))
+credit$RESPONSE <- factor(credit$RESPONSE)
+
+
+credit %>%
+  group_by(RESPONSE) %>%
+  summarise(count = n(), 'proportion(in %)' = n()/1000*100)
+
+```
+
+_*The proportion of Good and Bad respose is: 700 Good Response (70%) and 300 Bad Response (30%).*_  
+
+```{r}
+
+summary(credit)
+
+```
+
+**Exploratory Data Analysis for Numerical Variables:**  
+*We have the following numerical variables:*  
+DURATION    
+AMOUNT    
+INSTALL_RATE    
+AGE    
+NUM_CREDITS  
+NUM_DEPENDENTS  
+
+**I. DURATION:**  
+
+```{r}
+
+  credit %>% 
+  group_by(RESPONSE) %>% 
+  summarise(mean =mean(DURATION))
+
+ggplot(data = credit, aes(DURATION, fill = RESPONSE)) +
+  geom_density(alpha = 0.5)
+  
+
+```
+
+Hypothesis Test to find if the difference in mean duration for Good credit and bad credit is statistically significant. (Independent Sampled T-test)  
+
+Null Hypothesis: mean duration (Good response) = mean duration(Bad Response)   
+Alternative: mean duration (Good response) != mean duration(Bad Response)  
+
+```{r}
+
+t.test(DURATION ~ RESPONSE, data = credit, var.equal=FALSE, paired=FALSE)
+
+```
+**Finding:** _*The p-value for Welch two sample T-test is quite small. Hence we can conclude that the sample provides sufficient evidence that credit Response is dependent on duration of credit.*_  
+
+**II. AMOUNT:**   
+
+```{r}
+
+ credit %>% 
+  group_by(RESPONSE) %>% 
+  summarise(mean =mean(AMOUNT))
+
+ggplot(data = credit, aes(AMOUNT, fill = RESPONSE)) +
+  geom_density(alpha = 0.5)
+
+```
+  
+Hypothesis Test to find if the difference in mean amount for Good credit and bad credit is statistically significant. (Independent Sampled T-test)    
+
+Null Hypothesis: mean amount (Good response) = mean amount(Bad Response)     
+Alternative: mean amount (Good response) != mean amount(Bad Response)   
+
+
+```{r}
+t.test(AMOUNT ~ RESPONSE, data = credit, var.equal=FALSE, paired=FALSE)
+
+```
+
+**Finding:** _*The p-value for Welch two sample T-test is quite small. Hence we can conclude that the sample provides sufficient evidence that credit Response is dependent on credit amount.*_    
+
+**III. INSTALL_RATE:**  
+
+Hypothesis Test to find if the difference in mean install_rate for Good credit and bad credit is statistically significant. (Independent Sampled T-test)    
+
+Null Hypothesis: mean install_rate (Good response) = mean install_rate(Bad Response)     
+Alternative: mean install_rate (Good response) != mean install_rate(Bad Response)   
+
+
+```{r}
+
+credit %>% 
+  group_by(RESPONSE) %>% 
+  summarise(mean =mean(INSTALL_RATE))
+
+ggplot(data = credit, aes(INSTALL_RATE, fill = RESPONSE)) +
+  geom_density(alpha = 0.5)
+
+t.test(INSTALL_RATE ~ RESPONSE, data = credit, var.equal=FALSE, paired=FALSE)
+
+```
+
+**Finding:** _*The actuall sample install_rate mean for Good and Bad response are quite close to one another. But the p-value for Welch two sample T-test comes out to be smaller than 0.05. Hence we can conclude that the sample provides sufficient evidence that credit Response is dependent on installment rate.*_     
+
+
+**IV. AGE:**  
+
+Hypothesis Test to find if the difference in mean age for Good credit and bad credit is statistically significant. (Independent Sampled T-test)    
+
+Null Hypothesis: mean age (Good response) = mean age(Bad Response)     
+Alternative: mean age(Good response) != mean age(Bad Response)   
+
+```{r}
+
+credit %>% 
+  group_by(RESPONSE) %>% 
+  summarise(mean =mean(AGE))
+
+ggplot(data = credit, aes(x = RESPONSE, y = AGE, fill = RESPONSE)) +
+  geom_boxplot()
+
+t.test(AGE ~ RESPONSE, data = credit, var.equal=FALSE, paired=FALSE)
+
+```
+
+**Finding:** _*The actuall sample age mean for Good and Bad Response are quite close to one another. But the p-value for Welch two sample T-test comes out to be smaller than 0.05. Hence we can conclude that the sample provides sufficient evidence that credit Response is dependent on age.*_    
+
+**V. NUM_CREDITS:**  
+
+Hypothesis Test to find if the difference in mean number of credits for Good credit and bad credit is statistically significant. (Independent Sampled T-test)    
+
+Null Hypothesis: mean num_credits (Good response) = mean num_credits(Bad Response)     
+Alternative: mean num_credits(Good response) != mean num_credits(Bad Response)   
+
+
+```{r}
+
+credit %>% 
+  group_by(RESPONSE) %>% 
+  summarise(mean =mean(NUM_CREDITS))
+
+ggplot(data = credit, aes(x = RESPONSE, y = NUM_CREDITS, fill = RESPONSE)) +
+  geom_boxplot()
+
+t.test(NUM_CREDITS ~ RESPONSE, data = credit, var.equal=FALSE, paired=FALSE)
+
+
+
+```
+
+**Finding:** _*The actuall sample num_credits mean for Good and Bad Response are quite close to one another. And the p-value for Welch two sample T-test comes out to be greater than 0.05. Hence we fail to reject the Null hypothesis and we can say that number of credits does not have a statistically significant association with credit Response.*_    
+
+
+**VI. NUM_DEPENDENTS:**  
+
+
+```{r}
+
+credit %>% 
+  group_by(RESPONSE) %>% 
+  summarise(mean =mean(NUM_DEPENDENTS))
+
+t.test(NUM_DEPENDENTS ~ RESPONSE, data = credit, var.equal=FALSE, paired=FALSE)
+
+```
+
+
+**Finding:** _*The p-value for Welch two sample T-test comes out to be greater than 0.05. Hence we fail to reject the Null hypothesis and we can say that number of dependents does not have a statistically significant association with credit Response.*_      
+
+**Exploratory Data Analysis for Categorical Variables:**    
+*We have quite a few categorical variables, but we will study the association of Response with a few of them:*    
+CHK_ACCT        
+SAV_ACCT      
+HISTORY      
+JOB      
+OTHER_INSTALL    
+FOREIGN   
+
+**I. CHK_ACCT**
+
+```{r}
+
+
+inference(data = credit, 
+          x= CHK_ACCT, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          alternative = "greater",
+          method = "theoretical")
+
+```
+
+**Finding:** _*The results of Chi Square goodness of fit test give a p-value of 0, which is less than 0.05. Hence, we will reject the null hypothesis. So, we can conclude that there is statistically significant evidence showing that CHK_ACCT and RESPONSE are dependent.*_    
+
+**II. SAV_ACCT**
+
+```{r}
+
+
+inference(data = credit, 
+          x= SAV_ACCT, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          alternative = "greater",
+          method = "theoretical")
+
+
+
+```
+
+**Finding:** _*The results of Chi Square goodness of fit test give a p-value of 0, which is less than 0.05. Hence, we will reject the null hypothesis. So, we can conclude that there is statistically significant evidence showing that SAV_ACCT and RESPONSE are dependent.*_    
+
+
+**III. HISTORY**  
+
+
+```{r}
+inference(data = credit, 
+          x= HISTORY, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          alternative = "greater",
+          method = "theoretical")
+```
+
+**Finding:** _*The results of Chi Square goodness of fit test give a p-value of 0, which is less than 0.05. Hence, we will reject the null hypothesis. So, we can conclude that there is statistically significant evidence showing that HISTORY and RESPONSE are dependent.*_ 
+
+
+**IV. JOB**
+
+```{r}
+
+inference(data = credit, 
+          x= JOB, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          alternative = "greater",
+          method = "theoretical")
+
+```
+
+**Finding:** _*The results of Chi Square goodness of fit test give a p-value of 0.59, which is greater than 0.05. Hence, we fail to reject the null hypothesis. So, we can conclude that there is not enough evidence showing association between JOB and RESPONSE.*_ 
+
+
+**V. OTHER_INSTALL**  
+
+```{r}
+
+inference(data = credit, 
+          x= OTHER_INSTALL, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "greater",
+          method = "theoretical")
+
+
+```
+
+**Finding:** _*Null hypothesis suggests that proportion of people with Good response is equal for people with no other installments and those with othet installments. The results of hypothesis test give a p-value of less than 0.05. Hence, we can reject the null hypothesis, and conclude that proportion of people with Good Response is higher for people with no Other installments.*_     
+
+**VI. FOREIGN**  
+
+```{r}
+
+inference(data = credit, 
+          x= FOREIGN, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+
+
+```
+
+**Finding:** _*Null hypothesis suggests that proportion of people with Good response is equal for Foreign workers and non-foreign workers. The results of hypothesis test give a p-value of less than 0.05. Hence, we can reject the null hypothesis, and conclude that proportion of people with Good Response is not euqal for Foreign workers and non-foreign workers.*_     
+
+Similarly we do for all other variables:
+
+```{r}
+
+
+inference(data = credit, 
+          x= EDUCATION, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+inference(data = credit, 
+          x= FURNITURE, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+inference(data = credit, 
+          x= USED_CAR, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+
+inference(data = credit, 
+          x= Radio_TV, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+
+inference(data = credit, 
+          x= EMPLOYMENT, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "greater",
+          method = "theoretical")
+
+inference(data = credit, 
+          x= RETRAINING, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+inference(data = credit, 
+          x= MALE_DIV, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+inference(data = credit, 
+          x= MALE_SINGLE, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+
+inference(data = credit, 
+          x= MALE_MAR_or_WID, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+inference(data = credit, 
+          x= Coapplicant, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+inference(data = credit, 
+          x= PRESENT_RESIDENT, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "greater",
+          method = "theoretical")
+
+inference(data = credit, 
+          x= REAL_ESTATE, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+inference(data = credit, 
+          x= PROP_UNKN_NONE, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+inference(data = credit, 
+          x= RENT, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+inference(data = credit, 
+          x= OWN_RES, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+inference(data = credit, 
+          x= GUARANTOR, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+inference(data = credit, 
+          x= TELEPHONE, 
+          y=RESPONSE,
+          statistic = "proportion",
+          type = "ht", 
+          null = 0,
+          success = "Good",
+          alternative = "twosided",
+          method = "theoretical")
+
+
+
+```
+
+
+```{r}
+
+glm.fits=glm(RESPONSE~.-RESPONSE,data=credit,family = binomial)
+summary(glm.fits)
+
+
+```
+Finding : Following variables have p value MORE than the alpha value (0.05) and these variables do not gave a statitically significant association with RESPONSE:   
+FURNITURE,  
+RETRAINING,  
+MALE_DIV,  
+MALE_MAR_OR_WID,  
+PRESENT_RESIDENT,  
+NUM_CREDITS,  
+JOB,  
+NUM_DEPENDENTS,  
+TELEPHONE,  
+GUARANTOR  
+
+
+We will remove these variables from our analysis and we remain with 21 variables now.  
+
+**Problem 5, Part b:** 
+
+First we divide the data into training and test sets:  
+
+```{r}
+
+set.seed(101)
+credit <- select(credit,-c(FURNITURE,RETRAINING,MALE_DIV,MALE_MAR_or_WID,
+                           PRESENT_RESIDENT,NUM_CREDITS,JOB,NUM_DEPENDENTS,TELEPHONE,
+                           GUARANTOR))
+
+credit_index <- sample.int(n = nrow(credit), size = floor(.60*nrow(credit)), replace = F)
+credittrain <- credit[credit_index,]
+credittest <- credit[-credit_index,]
+
+```
+
+We have been given in the problem, that the cost of predicting False positives is 5 times of that predicting False negatives. So we will create a penalty or cost matrix and pass that as a parameter in each of our models.
+
+```{r}
+
+costMatrix <- matrix(c(0,1,5,0), byrow=TRUE, nrow=2)
+
+```
+
+
+Steps:  
+
+1.Parameter tuning using cross validation. For random Forest, we will find the best values of "mtry" and "ntrees". For rpart decision tree, we will find the best "cp".  
+
+2. We use 10-fold cross validation to compare the model perfoemance of Random Forest and rpart decision tree.
+
+3. Construct the new model with fine tuned parameters and predict the classes of test data. Evaluate the performance of both random forest and rpart on the test data.  
+
+4. Identify the important variables and important output rules for "Good" credit Response.  
+
+
+
+```{r}
+
+# Define the control
+control1 <- trainControl(method = "cv",
+    number = 10)
+
+```
+
+
+**Parameter tuning for Random Forest**
+
+```{r}
+
+set.seed(101)
+
+creditRF <- list(type = "Classification", library = "randomForest", loop = NULL)
+creditRF$parameters <- data.frame(parameter = c("mtry", "ntree"),
+                                class = rep("numeric", 2),
+                                label = c("mtry", "ntree"))
+
+creditRF$grid <- function(x, y, len = NULL, search = "grid") {}
+creditRF$fit <- function(x, y, wts, param, lev, last, weights, classProbs, ...)
+  {
+  randomForest(x, y, mtry = param$mtry, ntree=param$ntree, ...)
+  }
+
+creditRF$predict <- function(modelFit, newdata, preProc = NULL, submodels = NULL)
+   predict(modelFit, newdata)
+
+creditRF$prob <- function(modelFit, newdata, preProc = NULL, submodels = NULL)
+   predict(modelFit, newdata, type = "prob")
+
+creditRF$sort <- function(x) x[order(x[,1]),]
+creditRF$levels <- function(x) x$classes
+
+
+control <- trainControl(method="cv", number=10)
+tunegrid <- expand.grid(.mtry=c(1:20), .ntree=c(50,100,200,300,500, 700))
+set.seed(111)
+creditnew <- train(RESPONSE ~.-RESPONSE, 
+                   data=credittrain, method=creditRF, 
+                   metric="Accuracy", tuneGrid=tunegrid,
+                   trControl=control1, parms = list(loss=costMatrix)) 
+
+plot(creditnew)
+creditnew
+
+```
+
+_** From the results of parameter tuning by cross validation, the final values used for the random forest model were mtry = 13 and ntree = 50.**_  
+
+**Parameter tuning for rpart Decision tree**
+
+```{r}
+
+defaultrpart <- rpart(RESPONSE~.-RESPONSE, 
+                      data = credittrain, method = "class",
+                      control = rpart.control(minsplit = 10, cp = 0.01), 
+                      parms = list(loss=costMatrix))
+
+printcp(defaultrpart)
+  
+  
+```
+
+_**From the results of parameter tuning by cross validation, we see that the xerror is minimum for complexity parameter value cp = 0.01 and minsplit = 20.**_  
+
+**10-Fold Cross Validation on Random Forest**
+
+```{r}
+
+set.seed(112)
+
+k=10
+nc = floor(nrow(credit)/k)
+acc.vect = rep(NA,k)
+
+for (i in 1:k) {
+  
+  c1 = ((i-1) * nc+1)
+  c2 = (i*nc)
+  subset = c1:c2
+  
+  cvc.train = credit[-subset,]
+  cvc.test = credit[subset,]
+
+  creditrf <- randomForest (RESPONSE~.-RESPONSE, 
+                          data = cvc.train, mtry = 13, ntree = 50,
+                          parms = list(loss=costMatrix)) 
+
+  creditpred <- predict(creditrf, newdata = cvc.test, type = "class")
+  
+  acc.vect[i] <-  (confusionMatrix(creditpred, cvc.test$RESPONSE)$overall)[1]
+  
+  ##acc.vect[i] <-  auc(roc(cvc.test[,12], creditpred[,2]))
+
+  print(paste("Accuracy for fold", i, ":", acc.vect[i]))
+  
+} 
+
+print(paste("Average Accuracy :", mean(acc.vect)))
+
+
+```
+
+**10-Fold Cross Validation on rpart decision tree**  
+
+
+```{r}
+
+set.seed(122)
+
+k2=10
+n1 = floor(nrow(credit)/k2)
+err.vector = rep(NA,k)
+
+for (i in 1:k2) {
+  
+  p1 = ((i-1) * n1+1)
+  p2 = (i*n1)
+  credsubset = p1:p2
+  
+  cvrpart.train = credit[-credsubset, ]
+  cvrpart.test = credit[credsubset,]
+
+  creditrpart <- rpart(RESPONSE ~ .-RESPONSE, 
+                       data = cvrpart.train, method = "class", cp = 0.01,
+                       minsplit = 20,
+                       parms = list(loss=costMatrix))
+  
+  
+  creditpred_rpart <- predict(creditrpart, newdata = cvrpart.test, type = "class")
+  
+
+  err.vector[i] <- (confusionMatrix(creditpred_rpart, cvrpart.test$RESPONSE)$overall)[1]
+
+  print(paste("Accuracy for fold", i, ":", err.vector[i]))
+  
+}
+
+print(paste("Average Accuracy :", mean(err.vector)))
+
+
+
+```
+
+
+**Passing the parameters received from paramenter tuning and creating a more fine-tuned random forest tree. Also we predict the "RESPONSE" class for our test data with the tuned random forest model. We will also find out the area under the ROC curve for our model.**  
+
+```{r}
+
+tunedrf <- (randomForest(RESPONSE ~ .-RESPONSE, 
+                        data = credittrain, replace = TRUE,
+                        proximity = TRUE, importance = TRUE, mtry = 13, ntree = 50,
+                        parms = list(loss=costMatrix), cutoff = c(0.5,0.5)))
+
+plot(tunedrf)
+
+
+```
+
+
+```{r}
+
+rf_pred <- predict(tunedrf, newdata= credittest, type = "prob", positive = "Good")
+
+confusionMatrix(predict(tunedrf, newdata= credittest, type = "class"),
+                credittest$RESPONSE, positive='Good')
+
+rfauc <- prediction(rf_pred[,2], credittest$RESPONSE) 
+
+performance(rfauc,"auc")
+
+
+```
+
+**Results from Tuned Random Forest tree on test data:**  
+1. Accuracy: 75.75%  
+2. False Positive rate: (1-specificity) = 65.52%  
+3. False Negative:	(1 - Sensitivity) x Prevalence = 5.2%  
+4. Recall: sensitivity = 92.61%  
+5. AUC: 0.765  
+
+
+**Passing the parameters received from paramenter tuning and creating a more fine-tuned rpart tree. Also we predict the "RESPONSE" class for our test data with the tuned rpart model. We will also find out the area under the ROC curve for our model.**
+
+```{r}
+
+opt = which.min(defaultrpart$cptable[,"xerror"])
+  cp = defaultrpart$cptable[opt, "CP"]
+  prunedrpart = prune(defaultrpart, cp = cp, minsplit = 20)
+
+  prunedrpart
+
+
+```
+
+
+```{r}
+
+
+pred_rpart <- predict(prunedrpart, credittest, type = "prob", positive="Good")
+
+
+confusionMatrix(credittest$RESPONSE,
+                predict(prunedrpart, credittest, type = "class"),
+                positive = "Good")
+
+rpartauc <- prediction(pred_rpart[,2], credittest$RESPONSE) 
+
+performance(rpartauc,"auc")
+
+
+```
+
+**Results from Tuned rpart tree on the test data:**  
+1. Accuracy: 71%    
+2. False Positive rate: (1-specificity) = 50%    
+3. False Negative:	(1 - Sensitivity) x Prevalence = 25.74%    
+4. Recall: sensitivity = 72.46%    
+5. AUC: 0.71    
+
+
+**Important Variables from both the models**
+
+** To identify the best nodes in the random forest, we use the 'importance' parameter.**
+
+```{r}
+
+importance(tunedrf, type = 2)
+
+
+```
+
+_*The most important nodes in the random forest are the ones with highest value of MeanDecreaseGini. So according to above results, "AMOUNT", "CHK_ACCT","AGE" "DURATION", "EMPLOYEMENT", "HISTORY" and "INSTALL_RATE" seem to be the most important variables.*_
+
+
+** To identify the best nodes in the rpart, we extract the variable.importance column from our prunedrpart model and we use asRules() function to exctract the important rules.**  
+
+
+```{r}
+
+library(rattle) 
+
+prunedrpart$variable.importance
+
+
+asRules(prunedrpart)
+
+```
+
+_*The most important nodes in rpart decision tree for predicting "Good" response are, in order, "CHK_ACCT", "DURATION", "AMOUNT", "HISTORY" and "AGE", because the rules with these variables have high confidence and high support.*_  
+
+
+
+**Problem 5, Part c:**  
+
+
+We have been given that the cost of False positive is 5 times the cost of false negative. We will look for the model having a fair balance between false positive rate and false negative rate. The rpart decision tree has a false positive rate of 0.50 as compared to random forest which has a rate of 0.65.   
+
+So, the cost of choosing random forest model comes out to be :    
+((40*0)+(21*100)+(76*500)+(263*0)) = DM 40,100    
+Cost of choosing rpart model comes out to be :   
+((13*0)+(103*100)+(13*500)+(271*0)) = DM 16,800     
+
+So the rpart decision tree reduces the cost. But the false negative rate for rpart is 25.32% as compared to random forest that has false negative rate of 5.2%.   
+
+So we see that there is a trade-off between false positive rate and false negative rate. We have to find a model which takes care of this trade-off and provides a optimal and sensible result. For this purpose we will look at the receiver operating curve (ROC). ROC does not actually control False Positive and False negative rates but it tries to find a balance between them.  
+
+The Area under the ROC curve to compare the two models, 'tunedrf' and 'prunedrpart'.  
+
+```{r}
+
+
+rfauc <- prediction(rf_pred[,2], credittest$RESPONSE) 
+
+ROCrf <- performance(rfauc,"tpr", "fpr")
+plot(ROCrf, colorize = TRUE, main = "Random Forest ROC")
+
+
+rpartauc <- prediction(pred_rpart[,2], credittest$RESPONSE) 
+
+ROCrpart <- performance(rpartauc,"tpr", "fpr")
+plot(ROCrpart, colorize = TRUE, main = "rpart Decision Tree ROC")
+
+
+performance(rpartauc,"auc")
+performance(rfauc,"auc")
+
+```
+
+**Finding:**  
+
+_*So, according to Area under the curve for model evaluation, we will choose the rpart decision tree.*
+_*AUC for Random Forest model: 0.71*_      
+_*AUC for rpart model: 0.765 *_     
+
+
+**Problem 5, Part d:** 
+
+By intuition, if we want to penalize the false positives more than false negatives, we should increase the threshold or cut-off points, as that would discourage picking positive class. But to find the optimal cut-off point, we can use the following function:  
+
+To find the best cut-off, we will use the Youden Index that gives equal importance to sensitivity and specificity. Youden Index is given by:  
+**Youden index = sensitivity + specificity - 1**  
+
+We will try to maximize this index and find the corresponding "tpr" - y-intercept, "false_alarm" - x-intercept and "cutoff" - alpha-value for the chosen point.   
+
+
+```{r}
+
+opt.cut <- function(ROCrf){
+  
+  cut.ind <- mapply(FUN = function(x,y,p){yi=(y+(1-x)-1) 
+  ind<- which(yi==max(yi)) 
+  c(recall = y[[ind]], specificity = 1-x[[ind]],cutoff = p[[ind]])},ROCrf@x.values, ROCrf@y.values,ROCrf@alpha.values)
+}
+
+print(opt.cut(ROCrf))
+
+
+
+ 
+```
+
+_*The results show the optimum values of tpr, fpr and threshold for our model, which are:*_  
+
+_*1. Recall (tpr): 0.87_    
+_*2. False alarm (fpr): (1-0.51) = 0.49*_  
+_*3. Threshold: (0.62,0.38)*_  
+
+*We construct the new model using cut-offs obtained in the previous step:*
+
+```{r}
+
+
+newrf <- (randomForest(RESPONSE ~ .-RESPONSE, 
+                        data = credittrain, replace = TRUE,
+                        proximity = TRUE, importance = TRUE, mtry = 13,
+                        ntree = 50, cutoff = c(0.62,0.38),
+                        parms = list(loss=costMatrix)))
+
+rf_prednew <- predict(newrf, newdata= credittest, type = "prob", positive = "Good")
+
+rfaucnew <- prediction(rf_prednew[,2], credittest$RESPONSE) 
+
+ROCnew <- performance(rfaucnew,"tpr", "fpr")
+plot(ROCnew, colorize = TRUE)
+performance(rfaucnew,"auc")
+
+
+confusionMatrix(predict(newrf, credittest, type = "class"), 
+                credittest$RESPONSE, positive = "Good" )
+
+
+```
+
+The measures of the final model on the test data are:  
+1. AUC: 0.77  
+2. Accuracy: 77.5   
+
+
+
+**Problem 5, Part e:**  
+
+Following is a summary of our solution:  
+
+1. We start by converting the categorical variables into factors and get a summary of the data-set.  
+
+2. Parameter tuning using cross validation for each tree:  
+
+- Random forest: mtry = 13, ntree = 50   
+- rpart: cp = 0.01, minsplit = 20   
+
+3. We use 10-fold cross validation for model evaluation for Random forest and rpart decision tree on the basis of accuracy:  
+
+- Random forest average accuracy for 10 folds: 74.9%  
+- rpart average accuracy for 10 folds: 71%  
+
+4. Important variables and output rules for "Good" response prediction:  
+
+- Random Forest: "AMOUNT", "CHK_ACCT","AGE" "DURATION", "EMPLOYEMENT", "HISTORY" and "INSTALL_RATE"
+- rpart: "CHK_ACCT", "DURATION", "AMOUNT", "HISTORY" and "AGE" 
+
+5. Comparing the AUC of two models to determine which is better for our problem. AUC of random forest is higher, so we will choose random forest.   
+
+AUC for Random Forest model: 0.76   
+AUC for rpart model: 0.71
+
+6. To penalize the false positives and strike a balance between false positive and false negagtive rate, we will determine the best cut-off point on the ROC of random forest using Youden Index. We find (0.62,0.38) as the ideal cut-off point.   
+
+
+
+
+
+
+
+
+
+
+
+
+
